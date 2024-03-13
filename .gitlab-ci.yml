@@ -1,0 +1,74 @@
+stages:
+  - build
+  - package
+  - deploy
+
+variables:
+  CONTAINER: container-0
+  IMAGE_NAME: core.harbor.sdcom.gov.cn/mao-cheng-lab/hqzc-gw
+  NAMESPACE: frontend-admin
+  WORKLOAD: hqzc-gw
+
+
+cache:
+  key: cache
+  paths:
+    - node_modules
+
+build:
+  only:
+    - main
+  stage: build
+  image: node:14.19.1
+  artifacts:
+    paths:
+      - dist
+  script:
+    - npm config set registry=https://registry.npm.taobao.org
+    - npm config set sass_binary_site "https://npm.taobao.org/mirrors/node-sass"
+    - npm i
+    - yarn build:prod
+  tags:
+    - java-runner
+
+
+package:
+  stage: package
+  image: core.harbor.sdcom.gov.cn/docker/docker
+  cache:
+    key: "no-cache-$CI_COMMIT_SHA"
+    policy: pull
+  only:
+    - main
+  script:
+    - docker build -f docker/Dockerfile -t $IMAGE_NAME ./
+    - docker push $IMAGE_NAME
+  tags:
+    - shared-runner
+
+deploy-create:
+  stage: deploy
+  image: core.harbor.sdcom.gov.cn/docker/kubectl-ins-58:2.0.0
+  when: manual
+  only:
+    - main
+  script:
+    - /kubectl.sh -n=$NAMESPACE -i=$IMAGE_NAME -P=80 -w=$WORKLOAD -h=hq.sdcom.gov.cn
+  tags:
+    - ins42-runner
+
+deploy-update:
+  stage: deploy
+  image: core.harbor.sdcom.gov.cn/docker/kubectl-ins-58:2.0.0
+  when: on_success
+  only:
+    - main
+  script:
+    - /deployment.sh -d=$CI_PIPELINE_ID -n=$NAMESPACE -i=$IMAGE_NAME -w=$WORKLOAD -t=20 -m=20
+  tags:
+    - ins42-runner
+
+
+
+
+
